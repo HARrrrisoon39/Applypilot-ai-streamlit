@@ -2,6 +2,8 @@
 
 > **AI assistant for smarter job applications using Streamlit**
 
+![ApplyPilot AI Demo](Screenshot%202026-07-10%20111732.png)
+
 ApplyPilot AI is an intelligent job application assistant that reads your CV and a job description, then automatically performs a skills gap analysis, writes a tailored cover letter, generates interview prep questions, and tracks every application you save — all from a clean Streamlit UI.
 
 ---
