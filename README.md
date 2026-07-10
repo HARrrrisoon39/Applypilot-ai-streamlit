@@ -1,4 +1,4 @@
-# ApplyPilot AI 🚀
+# ApplyPilot AI — Streamlit Job Assistant 🚀
 
 > **AI assistant for smarter job applications using Streamlit**
 
