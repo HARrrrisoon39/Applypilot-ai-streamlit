@@ -1,3 +1,5 @@
+import os
+import threading
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -17,21 +19,50 @@ st.set_page_config(
 
 init_db()
 
+# ── API key guard ─────────────────────────────────────────────────────────────
+provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+_key_var = "OPENAI_API_KEY" if provider == "openai" else "ANTHROPIC_API_KEY"
+if not os.getenv(_key_var):
+    st.error(
+        f"**{_key_var} is not set.** Create a `.env` file in the project root with "
+        f"`{_key_var}=your-key-here` and restart the app."
+    )
+    st.stop()
+
 # ── Session state defaults ────────────────────────────────────────────────────
-if "cv_text" not in st.session_state:
-    st.session_state.cv_text = ""
-if "results" not in st.session_state:
-    st.session_state.results = None
+for key, default in [
+    ("cv_text", ""),
+    ("cv_filename", ""),
+    ("results", None),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # ── Sidebar: CV upload ────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("📄 Your CV")
     uploaded = st.file_uploader("Upload your CV (PDF)", type=["pdf"])
-    if uploaded:
-        st.session_state.cv_text = extract_pdf_text(uploaded.read())
-        st.success("CV loaded ✓")
+    if uploaded and uploaded.name != st.session_state.cv_filename:
+        try:
+            text = extract_pdf_text(uploaded.read())
+            if not text.strip():
+                st.warning("No text could be extracted from this PDF. It may be image-based.")
+            else:
+                st.session_state.cv_text = text
+                st.session_state.cv_filename = uploaded.name
+                st.success(f"CV loaded: {uploaded.name} ✓")
+        except Exception as exc:
+            st.error(f"Failed to read PDF: {exc}")
+
+    if st.session_state.cv_text:
+        st.caption(f"Loaded: **{st.session_state.cv_filename}**")
         with st.expander("Preview extracted text"):
-            st.text(st.session_state.cv_text[:2000] + ("…" if len(st.session_state.cv_text) > 2000 else ""))
+            preview = st.session_state.cv_text
+            st.text(preview[:2000] + ("…" if len(preview) > 2000 else ""))
+        if st.button("Clear CV", use_container_width=True):
+            st.session_state.cv_text = ""
+            st.session_state.cv_filename = ""
+            st.rerun()
 
     st.divider()
     st.caption("Navigate to **My Applications** to track your saved jobs.")
@@ -48,81 +79,73 @@ job_description = st.text_area(
 
 analyze_clicked = st.button("✨ Analyze & Generate", type="primary", use_container_width=True)
 
+AGENT_TIMEOUT = 120  # seconds
+
 if analyze_clicked:
     if not st.session_state.cv_text:
         st.warning("Please upload your CV in the sidebar first.")
     elif not job_description.strip():
         st.warning("Please paste a job description.")
     else:
-        with st.spinner("ApplyPilot is working… (this may take 30–60 seconds)"):
-            try:
-                llm = get_llm()
-                agent = build_agent(llm)
-                prompt = (
-                    "Here is the job description and the candidate's CV.\n\n"
-                    f"JOB DESCRIPTION:\n{job_description}\n\n"
-                    f"CV:\n{st.session_state.cv_text}\n\n"
-                    "Please use all three tools (analyze_skills, generate_cover_letter, "
-                    "create_interview_questions) and return the results."
-                )
-                response = agent.invoke({"input": prompt, "chat_history": []})
-                st.session_state.results = response["output"]
-            except Exception as exc:
-                st.error(f"Agent error: {exc}")
+        with st.spinner("ApplyPilot is working… (this may take up to 2 minutes)"):
+            result_container = {}
+            error_container = {}
+
+            def _run_agent():
+                try:
+                    llm = get_llm()
+                    agent = build_agent(llm)
+                    prompt = (
+                        "Here is the job description and the candidate's CV.\n\n"
+                        f"JOB DESCRIPTION:\n{job_description}\n\n"
+                        f"CV:\n{st.session_state.cv_text}\n\n"
+                        "Please use all three tools (analyze_skills, generate_cover_letter, "
+                        "create_interview_questions) and return the results."
+                    )
+                    result_container["response"] = agent.invoke(
+                        {"input": prompt, "chat_history": []},
+                        return_intermediate_steps=True,
+                    )
+                except Exception as exc:
+                    error_container["error"] = exc
+
+            t = threading.Thread(target=_run_agent)
+            t.start()
+            t.join(timeout=AGENT_TIMEOUT)
+
+            if t.is_alive():
+                st.error("The agent timed out after 2 minutes. Please try again.")
+            elif "error" in error_container:
+                st.error(f"Agent error: {error_container['error']}")
+            else:
+                response = result_container["response"]
+                # Extract tool outputs from intermediate steps keyed by tool name
+                tool_outputs = {}
+                for action, observation in response.get("intermediate_steps", []):
+                    tool_outputs[action.tool] = observation
+
+                st.session_state.results = {
+                    "skills": tool_outputs.get("analyze_skills", ""),
+                    "cover_letter": tool_outputs.get("generate_cover_letter", ""),
+                    "interview": tool_outputs.get("create_interview_questions", ""),
+                    "full_output": response["output"],
+                }
 
 # ── Display results ───────────────────────────────────────────────────────────
 if st.session_state.results:
-    output: str = st.session_state.results
-
-    # Try to split the output into three sections heuristically
-    def _extract_section(text: str, markers: list[str]) -> str:
-        for marker in markers:
-            idx = text.lower().find(marker.lower())
-            if idx != -1:
-                return text[idx:]
-        return text
-
-    skills_section = _extract_section(
-        output, ["## matching skills", "matching skills", "skill analysis", "skills"]
-    )
-    cover_section = _extract_section(
-        output, ["## cover letter", "cover letter", "dear hiring"]
-    )
-    interview_section = _extract_section(
-        output, ["## interview", "interview questions", "1."]
-    )
+    r = st.session_state.results
 
     with st.expander("🎯 Skills Analysis", expanded=True):
-        # Show the full output if we can't cleanly separate sections
-        if cover_section == output and interview_section == output:
-            st.markdown(output)
-        else:
-            end = min(
-                len(output),
-                output.lower().find("cover letter") if "cover letter" in output.lower() else len(output),
-            )
-            st.markdown(output[:end] if end < len(output) else output)
+        st.markdown(r["skills"] or r["full_output"])
 
     with st.expander("✉️ Cover Letter", expanded=True):
-        cl_start = output.lower().find("cover letter")
-        cl_end = output.lower().find("interview")
-        if cl_start != -1:
-            snippet = output[cl_start: cl_end if cl_end > cl_start else len(output)]
-            st.markdown(snippet)
-            # Store for save form
-            st.session_state["_cover_letter"] = snippet
-        else:
-            st.info("Cover letter section not distinctly separated — see full output below.")
+        st.markdown(r["cover_letter"] or "*Cover letter not found in tool outputs — see full output below.*")
 
     with st.expander("🎤 Interview Questions", expanded=True):
-        iq_start = output.lower().find("interview")
-        if iq_start != -1:
-            st.markdown(output[iq_start:])
-        else:
-            st.info("Interview questions section not distinctly separated — see full output below.")
+        st.markdown(r["interview"] or "*Interview questions not found in tool outputs — see full output below.*")
 
     with st.expander("📋 Full Agent Output"):
-        st.markdown(output)
+        st.markdown(r["full_output"])
 
     # ── Save application form ─────────────────────────────────────────────────
     st.divider()
@@ -153,7 +176,9 @@ if st.session_state.results:
                     "job_url": job_url,
                     "deadline": str(deadline),
                     "status": status,
-                    "cover_letter": st.session_state.get("_cover_letter", output),
+                    "skills_analysis": r["skills"],
+                    "cover_letter": r["cover_letter"],
+                    "interview_questions": r["interview"],
                 }
             )
             st.success(f"Saved **{job_title}** at **{company}** ✓")

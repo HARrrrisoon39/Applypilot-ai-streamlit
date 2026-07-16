@@ -60,7 +60,17 @@ for app in apps:
                 st.warning(f"Deleted application for {app['job_title']}.")
                 st.rerun()
 
+        if app.get("skills_analysis"):
+            with st.container():
+                st.markdown("**Skills Analysis:**")
+                st.markdown(app["skills_analysis"])
+
         if app.get("cover_letter"):
             with st.container():
                 st.markdown("**Cover Letter:**")
                 st.markdown(app["cover_letter"])
+
+        if app.get("interview_questions"):
+            with st.container():
+                st.markdown("**Interview Questions:**")
+                st.markdown(app["interview_questions"])

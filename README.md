@@ -12,11 +12,11 @@ ApplyPilot AI is an intelligent job application assistant that reads your CV and
 
 | Feature | Description |
 |---|---|
-| 📄 **CV Upload** | Upload your CV as a PDF — text is extracted automatically |
+| 📄 **CV Upload** | Upload your CV as a PDF — text is extracted automatically and persists across the session |
 | 🎯 **Skills Gap Analysis** | Matching skills, missing skills, and a hire-ability recommendation |
 | ✉️ **Cover Letter Generator** | Professional, role-tailored cover letter (300–400 words) |
 | 🎤 **Interview Prep** | 10 questions (technical + behavioural + gap-focused) with answer hints |
-| 💾 **Application Tracker** | SQLite-backed tracker with deadline, status, and cover letter storage |
+| 💾 **Application Tracker** | SQLite-backed tracker storing skills analysis, cover letter, and interview questions per application |
 | 🔁 **Provider-Agnostic LLM** | Switch between Anthropic Claude and OpenAI GPT via a single env variable |
 
 ---
@@ -39,6 +39,9 @@ ApplyPilot-ai-streamlit/
 ├── app.py                        # Main page — analysis & save form
 ├── config.py                     # LLM provider factory
 ├── requirements.txt
+├── .env.example                  # Environment variable template
+├── .streamlit/
+│   └── config.toml               # Streamlit theme & upload settings
 ├── agent/
 │   └── job_agent.py              # LangChain AgentExecutor
 ├── db/
@@ -71,7 +74,11 @@ pip install -r requirements.txt
 
 ### 3. Configure environment variables
 
-Create a `.env` file in the project root:
+Copy the template and fill in your values:
+
+```bash
+cp .env.example .env
+```
 
 ```env
 LLM_PROVIDER=anthropic        # or openai
@@ -79,6 +86,8 @@ LLM_PROVIDER=anthropic        # or openai
 ANTHROPIC_API_KEY=sk-ant-...  # required when LLM_PROVIDER=anthropic
 OPENAI_API_KEY=sk-...         # required when LLM_PROVIDER=openai
 ```
+
+The app will show a clear error on startup if the required API key is missing.
 
 ### 4. Run the app
 
@@ -92,14 +101,14 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ## How to Use
 
-1. **Upload your CV** — click *Browse files* in the sidebar and select your PDF.
+1. **Upload your CV** — click *Browse files* in the sidebar and select your PDF. The CV stays loaded for the whole session; use the *Clear CV* button to swap it out.
 2. **Paste a job description** — copy the full posting into the text area.
 3. **Click "Analyze & Generate"** — the agent calls all three tools and returns:
-   - Skills gap analysis
+   - Skills gap analysis (matching skills, gaps, recommendation)
    - Tailored cover letter
    - 10 interview questions with answer hints
-4. **Save the application** — fill in the job title, company, URL, deadline, and status, then click *Save Application*.
-5. **Track applications** — navigate to **My Applications** in the sidebar to view, update status, or delete saved entries.
+4. **Save the application** — fill in the job title, company, URL, deadline, and status, then click *Save Application*. All three outputs are saved separately.
+5. **Track applications** — navigate to **My Applications** in the sidebar to view, update status, or delete saved entries. Each entry shows the stored skills analysis, cover letter, and interview questions.
 
 ---
 

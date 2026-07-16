@@ -1,9 +1,9 @@
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from tools.skill_analyzer import analyze_skills
-from tools.cover_letter import generate_cover_letter
-from tools.interview_questions import create_interview_questions
+from tools.skill_analyzer import make_analyze_skills_tool
+from tools.cover_letter import make_generate_cover_letter_tool
+from tools.interview_questions import make_create_interview_questions_tool
 
 SYSTEM_PROMPT = """You are ApplyPilot, an expert AI career coach and job application assistant.
 
@@ -15,10 +15,13 @@ When given a job description and a candidate's CV, you MUST call ALL THREE tools
 Always call all three tools and present their results clearly to the user.
 Do not skip any tool. Be thorough, professional, and encouraging."""
 
-_TOOLS = [analyze_skills, generate_cover_letter, create_interview_questions]
-
 
 def build_agent(llm) -> AgentExecutor:
+    tools = [
+        make_analyze_skills_tool(llm),
+        make_generate_cover_letter_tool(llm),
+        make_create_interview_questions_tool(llm),
+    ]
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", SYSTEM_PROMPT),
@@ -27,5 +30,5 @@ def build_agent(llm) -> AgentExecutor:
             MessagesPlaceholder("agent_scratchpad"),
         ]
     )
-    agent = create_tool_calling_agent(llm, _TOOLS, prompt)
-    return AgentExecutor(agent=agent, tools=_TOOLS, verbose=True, max_iterations=10)
+    agent = create_tool_calling_agent(llm, tools, prompt)
+    return AgentExecutor(agent=agent, tools=tools, verbose=True, max_iterations=10)

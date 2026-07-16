@@ -14,4 +14,4 @@ def get_llm():
 
     # Default: Anthropic
     from langchain_anthropic import ChatAnthropic
-    return ChatAnthropic(model="claude-opus-4-8", temperature=0)
+    return ChatAnthropic(model="claude-opus-4-5", temperature=0)
